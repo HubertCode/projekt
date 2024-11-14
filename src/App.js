@@ -13,7 +13,6 @@ import {
 } from 'chart.js';
 import './App.css';
 
-// Rejestracja komponentów Chart.js
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -25,124 +24,148 @@ ChartJS.register(
 );
 
 function App() {
-  const [cryptos, setCryptos] = useState([]);
+  const [cryptoName, setCryptoName] = useState('');
+  const [cryptoData, setCryptoData] = useState(null);
   const [chartData, setChartData] = useState(null);
-  const [selectedCrypto, setSelectedCrypto] = useState('bitcoin'); // Domyślnie Bitcoin
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isDropdownVisible, setIsDropdownVisible] = useState(false);
+  const [cryptos] = useState([
+    { id: 'bitcoin', name: 'Bitcoin' },
+    { id: 'ethereum', name: 'Ethereum' },
+    { id: 'ripple', name: 'XRP' },
+    { id: 'dogecoin', name: 'Dogecoin' },
+  ]);
+  const [currencies] = useState([
+    { id: 'usd', name: 'USD' },
+    { id: 'pln', name: 'PLN' },
+    { id: 'eur', name: 'EUR' },
+    { id: 'gbp', name: 'GBP' },
+  ]);
+  const [filteredCryptos, setFilteredCryptos] = useState([]);
+  
+  // Funkcja do pobierania danych o kryptowalucie
+  const fetchCryptoData = async (id, currency) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-  // Lista dostępnych kryptowalut
-  const cryptoList = ['bitcoin', 'ethereum', 'ripple', 'litecoin'];
-
-  // Pobieranie danych o kryptowalutach
-  useEffect(() => {
-    const fetchCryptoData = async () => {
-      try {
-        setLoading(true);
-        const response = await axios.get('https://api.coingecko.com/api/v3/coins/markets', {
-          params: {
-            vs_currency: 'usd',
-            ids: cryptoList.join(','), // Pobierz wszystkie kryptowaluty na raz
-          },
-        });
-        setCryptos(response.data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+      // Pobieramy dane podstawowe o kryptowalucie
+      const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${id}`);
+      if (response.status !== 200) {
+        throw new Error('Błąd pobierania danych');
       }
-    };
 
-    fetchCryptoData();
-  }, []);
+      setCryptoData(response.data);
 
-  // Pobieranie danych o cenach 7-dniowych dla wybranej kryptowaluty
-  useEffect(() => {
-    const fetchChartData = async () => {
-      try {
-        const response = await axios.get(`https://api.coingecko.com/api/v3/coins/${selectedCrypto}/market_chart`, {
-          params: {
-            vs_currency: 'usd',
-            days: '7',  // 7 dni
+      // Pobieramy dane o wykresie 7-dniowym
+      const chartResponse = await axios.get(`https://api.coingecko.com/api/v3/coins/${id}/market_chart`, {
+        params: {
+          vs_currency: currency,
+          days: '7',
+        },
+      });
+
+      const prices = chartResponse.data.prices;
+      const labels = prices.map((price) => new Date(price[0]).toLocaleDateString());
+      const data = prices.map((price) => price[1]);
+
+      setChartData({
+        labels,
+        datasets: [
+          {
+            label: `Cena ${id.charAt(0).toUpperCase() + id.slice(1)} (${currency.toUpperCase()})`,
+            data,
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            fill: true,
           },
-        });
-        const prices = response.data.prices;
-        const labels = prices.map((price) => new Date(price[0]).toLocaleDateString());  // Daty
-        const data = prices.map((price) => price[1]);  // Ceny
+        ],
+      });
+    } catch (err) {
+      setError('Błąd podczas pobierania danych. Sprawdź poprawność nazwy kryptowaluty.');
+      setCryptoData(null);
+      setChartData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        // Ustawienie danych do wykresu
-        setChartData({
-          labels,
-          datasets: [
-            {
-              label: `Cena ${selectedCrypto.charAt(0).toUpperCase() + selectedCrypto.slice(1)} (USD)`,
-              data,
-              borderColor: 'rgb(75, 192, 192)',
-              backgroundColor: 'rgba(75, 192, 192, 0.2)',
-              fill: true,
-            },
-          ],
-        });
-      } catch (err) {
-        setError(err.message);
-      }
-    };
+  // Obsługuje zmianę tekstu w polu wyszukiwania
+  const handleInputChange = (event) => {
+    const query = event.target.value.toLowerCase();
+    setCryptoName(query);
 
-    fetchChartData();
-  }, [selectedCrypto]); // Zaktualizuj wykres, gdy zmieni się wybrana kryptowaluta
+    if (query === '') {
+      setFilteredCryptos(cryptos);
+    } else {
+      const filtered = cryptos.filter((crypto) =>
+        crypto.name.toLowerCase().includes(query) ||
+        crypto.id.toLowerCase().includes(query)
+      );
+      setFilteredCryptos(filtered);
+    }
+  };
 
-  // Obsługa zmiany wyboru kryptowaluty
-  const handleCryptoChange = (event) => {
-    setSelectedCrypto(event.target.value);
+  // Obsługuje kliknięcie na kryptowalutę z listy
+  const handleSearch = (id) => {
+    const selectedCurrency = currencies[0].id; // Domyślnie wybieramy USD, ale można to zmienić
+    fetchCryptoData(id, selectedCurrency);
+    setCryptoName('');
+    setIsDropdownVisible(false);
+  };
+
+  const handleInputClick = () => {
+    setIsDropdownVisible(!isDropdownVisible); // Zmieniamy widoczność dropdownu
   };
 
   return (
     <div className="App">
-      <h1>Kryptowaluty - Ceny w USD</h1>
+      <header className="App-header">
+        <h1>Kryptowaluty - Ceny w USD</h1>
+      </header>
 
-      {loading && <p>Ładowanie danych...</p>}
-      {error && <p>Błąd: {error}</p>}
+      {/* Pole wyszukiwania kryptowaluty */}
+      <div className="search-container">
+        <input
+          type="text"
+          value={cryptoName}
+          onClick={handleInputClick}
+          onChange={handleInputChange}
+          placeholder="Wpisz nazwę kryptowaluty (np. Bitcoin, Ethereum)"
+          className="search-input"
+        />
+        {isDropdownVisible && (
+          <div className="dropdown">
+            <ul className="suggestions-list">
+              {filteredCryptos.length > 0
+                ? filteredCryptos.map((crypto) => (
+                    <li key={crypto.id} onClick={() => handleSearch(crypto.id)}>
+                      {crypto.name} ({crypto.id.toUpperCase()})
+                    </li>
+                  ))
+                : cryptos.map((crypto) => (
+                    <li key={crypto.id} onClick={() => handleSearch(crypto.id)}>
+                      {crypto.name} ({crypto.id.toUpperCase()})
+                    </li>
+                  ))}
+            </ul>
+          </div>
+        )}
+      </div>
 
-      {/* Formularz wyboru kryptowaluty */}
-      <label htmlFor="cryptoSelect">Wybierz kryptowalutę: </label>
-      <select id="cryptoSelect" value={selectedCrypto} onChange={handleCryptoChange}>
-        {cryptoList.map((crypto) => (
-          <option key={crypto} value={crypto}>
-            {crypto.charAt(0).toUpperCase() + crypto.slice(1)}
-          </option>
-        ))}
-      </select>
+      {/* Wyświetlanie błędów */}
+      {error && <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>}
 
-      {/* Tabela z kryptowalutami */}
-      <table>
-        <thead>
-          <tr>
-            <th>Nazwa</th>
-            <th>Cena (USD)</th>
-            <th>Zmiana 24h (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {cryptos.map((crypto) => (
-            <tr key={crypto.id}>
-              <td>{crypto.name}</td>
-              <td>{crypto.current_price.toFixed(2)}</td>
-              <td style={{ color: crypto.price_change_percentage_24h > 0 ? 'green' : 'red' }}>
-                {crypto.price_change_percentage_24h.toFixed(2)}%
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Wyświetlanie ładowania */}
+      {loading && <p className="loading-text">Ładowanie danych...</p>}
 
-      {/* Wykres 7-dniowy dla wybranej kryptowaluty */}
-      {chartData ? (
-        <div>
-          <h2>Wykres 7-dniowy - {selectedCrypto.charAt(0).toUpperCase() + selectedCrypto.slice(1)}</h2>
+      {/* Wyświetlanie wykresu 7-dniowego dla kryptowaluty */}
+      {chartData && !loading && !error && (
+        <div className="chart-container">
+          <h2>{cryptoName.charAt(0).toUpperCase() + cryptoName.slice(1)}</h2>
           <Line data={chartData} options={{ responsive: true }} />
         </div>
-      ) : (
-        <p>Ładowanie wykresu...</p>
       )}
     </div>
   );
